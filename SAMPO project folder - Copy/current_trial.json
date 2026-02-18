@@ -1,0 +1,1 @@
+{"trial_number": 50, "total_trials": 50, "current_step": 10000, "total_steps": 10000, "progress": 1.0, "best_sharpe": 8.819717152322202, "eta": "Calculating...", "last_updated": "2026-02-02T20:55:05.262965", "current_metrics": {"return": -0.00796761551088075, "sharpe": -27.38701109979881, "max_dd": 0.00796761551088075, "trades": 12}}

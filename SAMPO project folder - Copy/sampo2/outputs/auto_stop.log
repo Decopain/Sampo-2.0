@@ -1,0 +1,4 @@
+[Thu Jan 22 09:05:20 2026] Auto-stopper started. Monitoring for completion of Trial 1 (Index 1).
+[Thu Jan 22 11:05:46 2026] Trial 1 is 99.0% complete. Waiting 120s for cleanup/logging.
+[Thu Jan 22 11:07:46 2026] Killing Tuner PID: 31348
+[Thu Jan 22 11:07:46 2026] Tuner terminated successfully.

@@ -1,0 +1,50 @@
+# SAMPO Project Overview
+
+## Project Structure
+The project is a Reinforcement Learning (RL) based algorithmic trading system.
+
+- **Root Directory**: Contains entry point scripts and analysis tools.
+- **sampo2/**: Main package containing the core logic.
+
+## Key Components
+
+### 1. Training Loop
+- **File**: [train_ppo.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/train_ppo.py)
+- Uses `stable_baselines3` PPO algorithm.
+- Loads data from [updated2022-2023_july2july.csv](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/updated2022-2023_july2july.csv) or generates dummy data.
+- Trains for 50,000 steps by default.
+- Saves models to `models/ppo_robust_test`.
+
+### 2. Trading Environment
+- **File**: [sampo2/env/trading_env.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/env/trading_env.py)
+- **Action Space**: Continuous (-1.0 to 1.0) representing target exposure.
+- **Observation Space**: Market features + Account State (Balance, Position, Drawdown) + Execution State (Unrealized PnL, etc.).
+- **Reward Function**: Risk-adjusted return (Return - Volatility Penalty - Drawdown Penalty - Streak Penalty).
+- **Features**: Includes execution logic like dynamic TP/SL, trailing stops, and "kill switches" for risk management.
+
+### 3. Data Pipeline
+- **File**: [sampo2/data/aggregator.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/aggregator.py)
+- Fetches data from OANDA/IBKR.
+- Computes features: SMA, OBV, VWAP, Heikin-Ashi, Fractals, Renko, ATR.
+
+## Files Used & Created
+Here are the files referenced in this report:
+
+**Inspected Source Files:**
+- [train_ppo.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/train_ppo.py)
+- [sampo2/data/aggregator.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/aggregator.py)
+- [sampo2/env/trading_env.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/env/trading_env.py)
+
+**Agent Artifacts:**
+- [task.md](file:///C:/Users/Jeff/.gemini/antigravity/brain/520a3339-bfa1-432d-a0bc-966c8d5ce2d0/task.md) (Task tracking)
+- [project_overview.md](file:///C:/Users/Jeff/.gemini/antigravity/brain/520a3339-bfa1-432d-a0bc-966c8d5ce2d0/project_overview.md) (This document)
+
+## Observations & Next Steps
+- **Dependencies**: No `requirements.txt` found. Key libs: `gymnasium`, `stable_baselines3`, `pandas`, `numpy`, `tpqoa`.
+- **Data**: [updated2022-2023_july2july.csv](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/updated2022-2023_july2july.csv) is the expected dataset.
+- **Status**: Code seems functional but experimental.
+
+## Recommended Next Steps
+1.  **Create `requirements.txt`**: To ensure reproducible environment.
+2.  **Verify Data**: Check if [updated2022-2023_july2july.csv](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/updated2022-2023_july2july.csv) is present and valid.
+3.  **Test Run**: Run [train_ppo.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/train_ppo.py) to verify the pipeline works end-to-end.

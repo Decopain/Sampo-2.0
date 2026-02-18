@@ -1,0 +1,184 @@
+# SAMPO2 Project Deep Dive & Status Report
+
+**Date**: 2026-01-25
+**Version**: 2.3 (Training Resume & Stabilization)
+**Status**: Training Re-Stabilized (Phase 9 Resumed)
+
+---
+
+## 1. Executive Summary
+We have successfully transitioned the SAMPO2 project from an experimental codebase into a **production-ready reinforcement learning pipeline**. The initial goal was to train a PPO agent for trading; we have since evolved this into a sophisticated "Hybrid System" that combines:
+1.  **Deep Learning**: A PNN (Probabilistic Neural Network) for market prediction.
+2.  **Reinforcement Learning**: A PPO Agent for strategy optimization.
+3.  **Hard Logic**: A robust "Execution Overlay" (Gates, Cooldowns, Risk Constraints) that prevents AI hallucinations.
+4.  **Tuning Infrastructure**: A "Sniper" calibration engine with real-time monitoring.
+
+We are currently in **Phase 9**, poised to run the large-scale hyperparameter search to find the optimal configuration for this hybrid engine.
+
+---
+
+## 2. Architecture Deep Dive
+
+The system is built on a 4-Stage Pipeline residing in the `sampo2/` package:
+
+### Stage 1: Data Aggregation (`sampo2/data`)
+*   **Sources**: Interactive Brokers (IBKR) for high-fidelity price data.
+*   **Feature Engineering**: A 56-column feature set including:
+    *   **GARCH(1,1)**: Statistical volatility modeling for regime detection.
+    *   **Renko Charts**: Noise-reduction technique to isolate "Pure Trend".
+    *   **PNN Signal**: A Probabilistic Neural Network trained on 2006-2010 data to predict future direction.
+    *   **Numeric Time**: Normalized `Hour` and `DayOfWeek` features to teach the AI intraday seasonality (avoiding the "Time Column Crash" issue).
+
+### Stage 2: The Environment ([sampo2/env/trading_env.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/env/trading_env.py))
+This is the core simulation engine. It is an OpenAI Gym environment with a **Continuous Action Space** (-1.0 to +1.0 exposure).
+*   **The "Overlays" (Safety Layer)**:
+    *   **Flip Gate**: The agent cannot switch Long <-> Short instantly unless the PNN confidence exceeds `conf_flip` (e.g., 60%).
+    *   **Cooldown**: After a flip, the agent is locked out for `cooldown_steps` (e.g., 5-15 mins).
+    *   **Dynamic Exits**: Takes Profit (TP) and Stop Loss (SL) are dynamic (`k * ATR`).
+*   **The Reward Function**: A sophisticated multi-objective signal:
+    *   `Raw PnL` (Profit/Loss).
+    *   MINUS `Volatility Penalty` (to encourage smooth equity).
+    *   MINUS `Drawdown Penalty` (exponentially weighted as DD deepens).
+    *   MINUS `Inactivity Penalty` (to prevent the agent from just sleeping).
+
+### Stage 3: The Agent (`sampo2/agents`)
+*   **Algorithm**: PPO (Proximal Policy Optimization) from Stable Baselines 3.
+*   **Configuration**: We use a custom MlpPolicy (Multi-Layer Perceptron).
+*   **Training**: The agent plays through 100,000+ steps of history.
+
+### Stage 4: The Tuning Infrastructure (Completed Today)
+*   **The Sniper ([tune_calibrated.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/agents/tune_calibrated.py))**: A dedicated script that runs the PPO training in a loop (Optuna Study).
+    *   **Pruning**: It kills trials early if they show >15% Drawdown or excessive turnover.
+    *   **Search Space**: It optimizes the Agent's earning rate *and* the Environment's safety rules simultaneously.
+*   **The Dashboard ([dashboard.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/dashboard.py))**: A Streamlit UI that polls the tuner's JSON logs to visualize:
+    *   Real-time Risk Metrics (Sharpe, MaxDD).
+    *   Training Progress (Step-by-step).
+    *   Global controls (Stop/Pause).
+
+---
+
+## 3. The Risk & Sizing Breakthrough (Deep Dive)
+*Reference: Based on the "Expert Quant + RL" prompt.*
+
+Before we added Execution Overlays, we first had to solve the **"Sizing Problem"**. A simple "Buy/Sell" agent is not enough for professional trading. We implemented a Multi-Metric Risk Framework to teach the agent to *scale* positions dynamically.
+
+### 1. Continuous Position Sizing
+*   **Concept**: Instead of discrete Actions (0=Buy, 1=Sell), we moved to a **Continuous Action Space** (`Box(-1.0, 1.0)`).
+*   **Effect**: The agent outputs a `target_exposure` float. It can choose to be 100% Long, 50% Short, or 25% Long (scaling in/out). This creates a smoother equity curve than "All-In/All-Out" gambling.
+
+### 2. The Multi-Metric Reward Function
+We decoupled the *Objective* (Sharpe Ratio) from the *Reward* (Step-wise Signal). Optimization Sharpe at every step is unstable. Instead, we use a shaped dense reward:
+*   `Reward = Net_PnL - (λ_vol * Rolling_Vol) - (λ_dd * Rolling_DD) - (λ_streak * Loss_Streak)`
+*   **Why?**: This teaches the agent that "Making money is good, but making money *wildly* is bad." It penalizes volatility and drawdowns *during* training.
+
+### 3. Risk Throttling (The "Penalty Box")
+We allow the agent to make mistakes, but we punish repeated failure.
+*   **Loss Streak Tracking**: We count consecutive losing trades.
+*   **Risk Multiplier**: As the streak grows, we mathematically shrink the allowed position size (`Exposure * 0.9 ^ Streak`). The agent is forced to trade smaller when it is cold.
+*   **Kill Switch**: If the streak hits 6-7 losses or MaxDD hits 15%, the episode terminates instantly (Hard Constraint).
+
+### 4. The Risk Evaluator
+We built a standalone [RiskEvaluator](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/agents/risk_evaluator.py#5-104) class that computes professional metrics post-hoc:
+*   **Sortino Ratio**: Penalizes only downside variance (unlike Sharpe).
+*   **CVaR**: Conditional Value at Risk (Tail Risk).
+*   **Calmar**: Return / Max Drawdown.
+This allows us to select policies that are robust, not just lucky.
+
+---
+
+## 4. The Execution & Reward Breakthrough (Deep Dive)
+*Reference: Based on the "Senior Quant" architectural prompt.*
+
+While the Risk Framework handled *sizing*, the agent still churned too much. We implemented a "Neuro-Symbolic" layer to fix this:
+
+### 1. The Churn Blockers (Gates)
+*   **Flip Gate (Hysteresis)**: A `flipping` action (Long -> Short) is **blocked** unless the Neural Network's confidence exceeds a critical threshold (Default: `0.60`).
+*   **Cooldown Window**: After *any* polarity change, the agent is locked into that direction for `N` steps (Default: 5-15 mins).
+
+### 2. Intelligent Exits (The "Safety Net")
+We added rules that override the agent's desire to hold losing trades:
+*   **ATR Dynamic Exits**: Stop Loss and Take Profit are not fixed %; they breathe with volatility (`K * ATR`).
+*   **Regime-Change Exit**: If the Renko model detects a shift to "Choppy/Noise", we flatten immediately.
+
+### 3. Cost-Aware Profit Taking
+*   **The Fix**: A profit-close is ONLY allowed if `Unrealized PnL > Costs_Paid + Buffer`. The agent is literally forbidden from taking "fake profits."
+
+### 4. Learnable Rewards ("Good Close" Signal)
+*   **Observation**: We expanded the input state to include `Unrealized_PnL`, `Costs_Paid`, and `Distance_to_SL`.
+*   **Reward Signal**: When the agent triggers a cost-aware profit take, we give it a specifically engineered **"Good Close" Bonus**.
+
+### 5. The "Double-Log" Accounting Fix
+*   **The Fix**: A flip is now mathematically two events (Close A -> Open B), ensuring net PnL and metrics are rigorously accurate.
+
+---
+
+## 5. Comprehensive File Index & Reference
+
+This section lists every file used or created in the project, categorized by function. Click the links to open them directly.
+
+### 🎛️ Core Infrastructure (Tuning & Monitoring)
+*   **Dashboard**: [dashboard.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/dashboard.py)
+*   **The Tuner**: [tune_calibrated.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/agents/tune_calibrated.py)
+*   **Control File**: [tuning_control.json](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/tuning_control.json)
+*   **Status File**: [current_trial.json](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/current_trial.json)
+
+### 🧠 Agents & Training
+*   **Evaluator**: [risk_evaluator.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/agents/risk_evaluator.py)
+*   **Base Trainer**: [trainer.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/agents/trainer.py)
+*   **Evaluator Script**: [evaluate_ppo.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/evaluate_ppo.py)
+*   **Training Script**: [train_ppo.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/train_ppo.py)
+
+### 🎮 Environment (The Simulation)
+*   **Trading Env**: [trading_env.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/env/trading_env.py)
+*   **Actions**: [actions.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/env/actions.py)
+
+### 📊 Data Pipeline (Aggregator & Loaders)
+*   **Main Aggregator**: [aggregator.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/aggregator.py)
+*   **IB Connectivity**: [ib_aggregator.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/ib_aggregator.py)
+*   **GARCH**: [garch.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/garch.py)
+*   **Renko**: [renko_extractor.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/renko_extractor.py)
+*   **Loader**: [loader.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/loader.py)
+*   **Reference Notebook**: [Interactive_Brokers_firststeps.ipynb](file:///c:/Users/Jeff/Desktop/sample_DS/Interactive_Brokers_firststeps.ipynb)
+
+### 🤖 Models (Deep Learning)
+*   **PNN Architecture**: [pnn.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/models/pnn.py)
+*   **PNN Trainer**: [train_pnn.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/models/train_pnn.py)
+*   **Renko Model**: [train_renko_xgboost.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/models/train_renko_xgboost.py)
+
+### 🛠️ Tests & Utilities
+*   **Unit Tests**: [test_execution_logic.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/test_execution_logic.py)
+*   **Auto Stopper**: [auto_stopper.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/auto_stopper.py)
+*   **Monitor (CLI)**: [monitor_progress.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/monitor_progress.py)
+
+---
+
+## 6. Technical Challenges & Solutions
+
+### 1. "Protobuf Hell"
+*   **Fix**: `os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"` patch.
+
+### 2. "Time Column Crash"
+*   **Fix**: Convert Time string to `Hour_norm` and `Day_norm` floats.
+
+### 3. Invisible Live Metrics
+*   **Fix**: Lowered Metric Calculator threshold (10 -> 2 steps).
+
+### 4. "NaN Explosion" (Training Crash)
+*   **Issue**: PPO Model `log_std` exploded to 43 (Sigma=5e18), causing immediate numerical instability on resume.
+*   **Fix**: "Surgical Intervention" -> Manually reset `model.policy.log_std` to -0.5, creating a fresh, stable starting point for exploration.
+
+### 5. "9-Step Kill Loop" (Early Termination)
+*   **Issue**: On resume, strict `loss_streak` logic terminated episodes every ~9 steps (constant neg reward).
+*   **Fix**: Relaxed `streak_kill` (5 -> 100) and `dd_kill` (15% -> 25%) in `TradingEnv` for the recovery phase. Result: Episodes > 4k steps.
+
+---
+
+## 7. Next Steps (Roadmap)
+
+1.  **Monitor Training to 5M Steps**
+    *   *Plan*: Allow the resumed agent to complete the marathon.
+2.  **Walkthrough Documentation**
+    *   *Plan*: Document the entire rescue operation in `walkthrough.md`.
+
+---
+**Summary**: The file index above essentially makes this report the **User Manual** for the repository.

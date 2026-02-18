@@ -1,0 +1,100 @@
+# SAMPO2 System Architecture (Final As-Built)
+
+This diagram illustrates the fully implemented SAMPO2 architecture, featuring multi-timeframe data fusion, advanced feature engineering (GARCH + PNN + Renko), and an automated RL training pipeline.
+
+```mermaid
+graph TD
+    %% Subgraph Styles
+    classDef source fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef process fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    classDef model fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;
+    classDef storage fill:#f3e5f5,stroke:#4a148c,stroke-width:2px;
+    classDef env fill:#fce4ec,stroke:#880e4f,stroke-width:2px;
+
+    subgraph Data_Sources [Data Acquisition]
+        direction TB
+        IBKR[("Interactive Brokers<br>(TWS/Gateway)")]:::source
+        LocalCSV[("Historical CSVs<br>(2005-2023)")]:::source
+    end
+
+    subgraph Data_Pipeline [Preprocessing & Features]
+        direction TB
+        
+        Aggregator["Aggregator Layer<br>(sampo2.data.aggregator)"]:::process
+        
+        subgraph Multi_Timeframe [Timeframe Processing]
+            H1["H1 Features"]:::storage
+            Daily["Daily Features"]:::storage
+            M15["M15 Features"]:::storage
+        end
+        
+        subgraph Feature_Engineering [Advanced Features]
+            GARCH["GARCH Volatility<br>(garch.py)"]:::process
+            PNN["PNN (3-Branch Neural Net)<br>(train_pnn.py)"]:::model
+            Renko["Renko Trend Predictor<br>(XGBoost)"]:::model
+        end
+        
+        Processor["Enrichment & Merge Layer"]:::process
+    end
+
+    subgraph Storage [Artifact Storage]
+        FinalDataset[("Final Combined Dataset<br>(146 Features)")]:::storage
+    end
+
+    subgraph RL_System [Reinforcement Learning Pipeline]
+        Pipeline["training_pipeline.py<br>(Automated Orchestrator)"]:::process
+        Tuner["Optuna Tuner<br>(Hyperparam Optimization)"]:::process
+        Agent["PPO Agent<br>(Stable-Baselines3)"]:::model
+        Environment["Trading Environment<br>(Gymnasium)"]:::env
+        Eval["Evaluation & Logging"]:::process
+    end
+
+    %% Connections
+    IBKR --> Aggregator
+    LocalCSV --> Aggregator
+    
+    Aggregator -->|Process| H1
+    Aggregator -->|Resample| Daily
+    Aggregator -->|Upsample/Load| M15
+    
+    H1 --> GARCH
+    GARCH -->|volatility_h1| Processor
+    
+    H1 & Daily & M15 --> PNN
+    PNN -->|Context Embeddings| Processor
+    
+    H1 --> Renko
+    Renko -->|Brick Predictions| Processor
+    
+    Processor -->|Merge All| FinalDataset
+    
+    FinalDataset -->|Load| Environment
+    Pipeline -->|Run| Tuner
+    Tuner -->|Best Params| Agent
+    Environment -->|State| Agent
+    Agent -->|Action| Environment
+    Agent -->|Final Model| Eval
+
+```
+
+## Component Details
+
+### 1. Data Pipeline ([system_architecture_pipeline.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/pipeline/system_architecture_pipeline.py))
+-   **Aggregator**: Ingests raw OHLCV and produces standardized technical indicators across three timeframes: **H1**, **Daily**, and **M15**.
+-   **GARCH**: Models volatility on H1 returns to provide risk context.
+-   **PNN (Parallel Neural Network)**: A Deep Learning model that ingests H1, Daily, and M15 data simultaneously. It extracts a 100-dimensional "Market Embedding" vector representing the complex state.
+-   **Renko Predictor**: An XGBoost classifier trained on Renko Bricks (~78% Accuracy). Its predictions (`renko_prob_red`, `renko_prob_blue`) are mapped back to H1 time bars to guide the agent.
+
+### 2. The Final Dataset
+-   **File**: [final_combined_dataset.csv](file:///c:/Users/Jeff/Desktop/sample_DS/outputs/final_combined_dataset.csv)
+-   **Content**: A massive tabular dataset (~146 columns) containing:
+    -   Price Action (OHLCV)
+    -   Technical Indicators (RSI, MA, etc.)
+    -   Volatility State (GARCH)
+    -   Neural Context (PNN Embeddings)
+    -   Trend Probability (Renko Model)
+
+### 3. RL Training Pipeline ([training_pipeline.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/pipeline/training_pipeline.py))
+-   **Step 1: Tuning**: Runs [optuna_tuner.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/optuna_tuner.py) (5 Trials) to find the best hyperparameters (Learning Rate, Profit Balance, Entropy).
+-   **Step 2: Training**: Runs [trainer.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/trainer.py) (50,000 Steps) using the optimized parameters.
+-   **Step 3: Evaluation**: Simulates trading on unseen test data and generates [evaluation_trades.csv](file:///c:/Users/Jeff/Desktop/sample_DS/outputs/evaluation_trades.csv).

@@ -1,0 +1,16 @@
+{
+    "learning_rate": 1.4825413818074081e-05,
+    "ent_coef": 0.0024375045009769657,
+    "clip_range": 0.3,
+    "gamma": 0.999,
+    "gae_lambda": 0.95,
+    "batch_size": 128,
+    "n_steps": 2048,
+    "vol_target": 0.017166585319950373,
+    "dd_limit": 0.0910035599717232,
+    "streak_kill": 3,
+    "lambda_tc": 0.12271027715876948,
+    "lambda_vol": 0.13089162104129506,
+    "lambda_dd": 3.7886278429516596,
+    "lambda_streak": 1.587575688560296
+}

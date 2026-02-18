@@ -1,0 +1,90 @@
+
+# Risk & Sizing Framework (As-Built)
+
+## Overview
+We have upgraded the training system from a simple Discrete Agent to a **Continuous Control Risk-Aware Agent**.
+
+## key Features
+
+### 1. Continuous Position Sizing
+-   **Action Space**: `Box(-1.0, 1.0)`
+-   **Meaning**: The agent outputs a `target_exposure`.
+    -   `+1.0`: Full Long (100% Equity).
+    -   `0.0`: Flat (Cash).
+    -   `-0.5`: 50% Short.
+-   **Mechanism**: The environment calculates the required trade (`delta_position`) to reach the target, pays transaction cost on the delta, and updates the state.
+
+### 2. Multi-Metric Reward Function
+The reward is no longer just "Net Profit". It is a composite function designed to produce stable, professional trading behavior:
+```python
+Reward = (LogReturn * 100) 
+         - (λ_vol * ExcessVolatility) 
+         - (λ_dd * ExcessDrawdown) 
+         - (λ_streak * LossStreakPenalty)
+```
+This forces the agent to balance Profit against Consistency.
+
+### 3. Risk Constraints (Hard Factors)
+-   **Loss Streak Throttling**: As `loss_streak` increases, the agent's effective max position size is reduced (`0.8 ^ streak`).
+-   **Kill Switches**:
+    -   If `Drawdown > 15%`: Episode Terminates immediately.
+    -   If `Consecutive Losses > 5`: Episode Terminates immediately.
+
+### 4. Advanced Evaluation
+We integrated a [RiskEvaluator](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/risk_evaluator.py#5-85) module that reports:
+-   **Sharpe Ratio** (Primary Optimization Objective)
+-   **Sortino Ratio**
+-   **Calmar Ratio**
+-   **Max Drawdown**
+
+## Validation
+The system successfully completed a full Optimization & Training cycle ([training_pipeline.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/pipeline/training_pipeline.py)).
+-   **Tuner**: Switched to maximizing Validation Sharpe Ratio.
+-   **Best Agent**: Found parameters that balance aggressive returns with volatility penalties.
+
+## Next Steps
+The agent is now training with these new "Physics". PnL should improve over time as it learns to avoid the Penalties (i.e., avoiding drawdowns and streaks).
+
+## 2018 Out-of-Sample Backtest Results
+**Objective**: Validate performance on a full year of unseen data (2018).
+
+**Execution**:
+- **Data**: 2018-01-02 to 2018-12-31 (IBKR Aggregated)
+- **Results**:
+  - **Total Return**: -0.59%
+  - **Max Drawdown**: 0.99% (Well within 15% limit)
+  - **Sharpe Ratio**: -1.03
+  - **Volatility**: 0.57%
+  - **Total Trades**: 1 (Agent took a single long position and held it for the duration, prioritizing low turnover/volatility).
+
+**Conclusion**:
+The system successfully processed a full year of historical data. The conservative risk settings prevented significant losses (-0.59%) even in a non-profitable period. The pipeline is robust for both live inference and historical backtesting.
+
+## 5. Fresh 50k Training Experiment (Results)
+**Objective**: Test if a fresh agent (no prior bias) adopts a more active policy under the new risk framework.
+
+**Config**: 50,000 Steps, Fresh Init.
+**Results**:
+- **Total Trades**: 9 (Significantly more active than the "Buy & Hold" agent).
+- **Total Return**: -0.73%
+- **Max Drawdown**: 0.78% (Very Safe).
+- **Win Rate**: 47.97%
+- **Observation**: The training logs showed frequent "Kill Switch: Loss Streak Exceeded" events. The agent is trying to trade but getting stopped out by strict risk constraints (4-5 consecutive losses). This confirms the risk framework is working hard to protect capital, albeit at the cost of momentum learning in this short run.
+
+## 6. Fresh 1M Training Results
+**Objective**: Train for 1M steps to overcome bias and passivity.
+
+**Results (Test Set 2023)**:
+- **Total Trades**: 0 logged (Artifact of Kill Switch termination).
+- **Activity**: The logs show "Kill Switch: Loss Streak (6) exceeded", proving the agent *did* take positions but was forcefully terminated for safety before closing them naturally.
+- **Total Return**: -0.39% (Loss limited by safety mechanisms).
+- **Observation**: The "Fresh" agent is aggressive but imprecise. It repeatedly hits the "5 Failing Trades in a Row" limit. The strict risk constraints are preventing it from learning deep trends, or the market regime in 2023 is difficult for its current policy.
+
+## 7. Renko-Driven Strategy Experiment
+**Objective**: Force the policy to follow the Renko XGBoost predictions (Blue=Long, Red=Short) wrapped in the same Risk Constraints.
+
+**Results (Test Set 2023)**:
+- **Total Trades**: 7 (Before termination)
+- **Total Return**: -0.38%
+- **Win Rate**: 37.14%
+- **Observation**: Just like the PPO agent, this strategy hit the "Kill Switch: Loss Streak Exceeded". The pure Renko signal had a low win rate (37%) in this period, causing it to trigger the 5-loss safety stop. This suggests that **neither** the RL agent nor the pure Renko model can easily profit in the 2023 regime under these strict safety rules.

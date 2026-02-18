@@ -1,0 +1,113 @@
+# SAMPO2 Project Tasks
+
+## Phase 1: Exploration & Design
+- [x] Inspect existing data files and schemas <!-- id: 0 -->
+- [x] Analyze reference notebooks for logic extraction <!-- id: 1 -->
+- [x] Design repository structure and data contracts <!-- id: 2 -->
+- [x] Create implementation plan artifact <!-- id: 3 -->
+
+## Phase 2: Implementation
+- [x] **Part 1: Data & GARCH**
+    - [x] Create Directory Structure <!-- id: 19 -->
+    - [x] Implement data loaders and validation ([loader.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/loader.py)) <!-- id: 4 -->
+    - [x] Implement GARCH volatility modeling pipeline ([garch.py](file:///c:/Users/Jeff/Desktop/sample_DS/SAMPO/garch.py)) <!-- id: 5 -->
+    - [x] Verify GARCH outputs <!-- id: 6 -->
+- [x] **Part 2: PNN Model**
+    - [x] Implement PNN architecture (TensorFlow/Keras) <!-- id: 7 -->
+    - [x] Integrate Interactive Brokers (IBKR) <!-- id: 4 -->
+    - [x] Install `ib_async` <!-- id: 5 -->
+    - [x] Create [sampo2/data/ib_aggregator.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/data/ib_aggregator.py) <!-- id: 6 -->
+    - [x] Update [run_pipeline.py](file:///c:/Users/Jeff/Desktop/sample_DS/run_pipeline.py) to use IBKR <!-- id: 7 -->
+    - [x] Verify data fetching from IBKR <!-- id: 8 -->
+    - [-] Integrate OANDA (Deprecated) <!-- id: 9 -->
+    - [x] Train/Save PNN model <!-- id: 9 -->
+    - [x] **Integrated Full 56-Column Feature Set** <!-- id: 20 -->
+    - [x] **Implemented Checkpointing & Early Stopping** <!-- id: 22 -->
+- [x] **Part 3: Combined Dataset**
+    - [x] Implement dataset merger (features + predictions) <!-- id: 10 -->
+    - [x] Implement scaling and alignment logic <!-- id: 11 -->
+- [x] **Part 4: Trading Environment**
+    - [x] Implement Gymnasium environment (Account, Positions, Rewards) <!-- id: 12 -->
+    - [x] Unit test environment logic <!-- id: 13 -->
+    - [x] **Implemented Detailed Trade Logging (Entry/Exit/Price/PnL)** <!-- id: 24 -->
+    - [x] **Tune Environment for Trade Activity (Inactivity Penalty)** <!-- id: 26 -->
+    - [x] **Enforce Intraday Trading (Force Close @ 5PM EST)** <!-- id: 28 -->
+- [x] **Part 5: PPO Agent & Training**
+    - [x] Implement PPO training script (Stable Baselines3) <!-- id: 14 -->
+    - [x] Implement Optuna integration <!-- id: 15 -->
+    - [x] Implement backtesting/evaluation reporting <!-- id: 16 -->
+    - [x] **Implemented Resume Training Feature** <!-- id: 23 -->
+    - [x] **Visual Evaluation CSV Export** (`evaluation_trades.csv`) <!-- id: 25 -->
+    - [x] **Increase PPO Entropy Coefficient** <!-- id: 27 -->
+
+- [x] **Part 6: Risk & Sizing Framework (New)** <!-- id: 43 -->
+    - [x] **Implement Continuous TradingEnv (Box Action Space)** <!-- id: 44 -->
+    - [x] **Implement Risk State Logic (Streak, Drawdown, Volatility)** <!-- id: 45 -->
+    - [x] **Implement Multi-Metric Reward (PnL - Penalties)** <!-- id: 46 -->
+    - [x] **Implement RiskEvaluator (Sharpe/Sortino)** <!-- id: 47 -->
+    - [x] **Update Tuner for Sharpe Optimization** <!-- id: 48 -->
+    - [x] **Verify Pipeline End-to-End** <!-- id: 49 -->
+
+- [x] **Part 7: Hyperparameter Optimization** <!-- id: 29 -->
+    - [x] **Enhance Optuna Tuner** ([optuna_tuner.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/optuna_tuner.py)) <!-- id: 29 -->
+    - [x] Expand search space (LR, Gamma, Clip, Batch Size).
+    - [x] Optimize for Trade Profit/Equity.
+    - [x] Save best parameters to JSON.
+    - [x] **Integrate Best Params into Trainer** ([trainer.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/trainer.py)) <!-- id: 30 -->
+    - [x] **Run Automated Tuning** <!-- id: 31 -->
+
+- [x] **Part 8: Renko Trend Predictor** <!-- id: 38 -->
+    - [x] **Generate Renko Dataset** (Extract blocks & Label targets) <!-- id: 39 -->
+    - [x] **Train Predictor Model** (XGBoost/LSTM) <!-- id: 40 -->
+    - [x] **Validate Accuracy** (>55% Target) <!-- id: 41 -->
+    - [x] **Integrate Prediction into RL Env** (As new feature column) <!-- id: 42 -->
+
+
+
+
+
+    - [x] Backtest on Fresh IBKR Data <!-- id: 11 -->
+
+
+## Phase 4: Long Training & Production
+- [x] **Run Full Training (1,000,000 Steps)** <!-- id: 32 -->
+- [x] **Reward Shaping (Profit Bonuses)** <!-- id: 33 -->
+- [x] **Sampo Data Aggregation Module** <!-- id: 34 -->
+- [x] Generate a new dataset using the newly integrated aggregation pipeline
+    - [x] Extract raw OHLCV from [updated2022-2023_july2july.csv](file:///c:/Users/Jeff/Desktop/sample_DS/updated2022-2023_july2july.csv)
+    - [x] Upgrade scientific stack (numpy, pandas, scipy, arch, sb3) to fix compatibility
+    - [x] Run [aggregator.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/data/ib_aggregator.py) on the raw data
+- [x] **Fresh 1M Start**: Train new PPO model from scratch (1M steps) to overcome prior bias. <!-- id: 50 -->
+- [x] **Renko Experiment**: Force Renko predictions as policy + Risk Constraints. <!-- id: 60 -->
+- [x] Create main pipeline entry point <!-- id: 17 -->
+
+## Phase 7: Robust Execution & Smart Exits (Churn Reduction)
+- [x] **State & Config**: Update [TradingEnv](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/env/trading_env.py#7-527) with new params (Cooldown, Gates, ATR) and state tracking (Entry Price, Holding Time). <!-- id: 70 -->
+- [x] **Execution Overlays**: Implement Flip Gate, Cooldown, TP/SL, Trailing Stop, and Regime Exits in [step()](file:///c:/Users/Jeff/Desktop/sample_DS/SAMPO/Official%20SAMPO%20Training.py#148-351). <!-- id: 71 -->
+- [x] **Reward & Obs**: Add learnable features (Unrealized PnL, Costs) to observation and "Good Close" reward. <!-- id: 72 -->
+- [x] **Accounting & Logging**: Fix Flip cost attribution and trade logging. <!-- id: 73 -->
+- [x] **Verification**: Create [test_execution_logic.py](file:///c:/Users/Jeff/Desktop/sample_DS/test_execution_logic.py) to validate gates, exits, and accounting. <!-- id: 74 -->
+
+## Phase 8: Training & Validation
+- [x] **Training Script**: Create [train_ppo.py](file:///c:/Users/Jeff/Desktop/sample_DS/train_ppo.py) with 50k step limit and SB3 configuration. <!-- id: 80 -->
+- [x] **Data Prep**: Ensure training data is loaded correctly (using [Processor](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/processor.py#7-74) or CSV loader). <!-- id: 81 -->
+- [x] **Execution**: Run PPO training for 50k steps. <!-- id: 82 -->
+- [x] **Evaluation**: Analyze training metrics (PnL, Churn, Length) to verify progress. <!-- id: 83 -->
+
+## Phase 9: Full Calibration / Hyperparameter Tuning
+- [ ] **Data Prep**:
+    - [x] Processing Phase 9 Data (Retrained PNN & Renko on 2006-2010). <!-- id: 91 -->
+- [x] **Tuning Infrastructure**:
+    - [x] Create [tune_calibrated.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/agents/tune_calibrated.py) with multi-metric Evaluator (Sharpe/Sortino/CVaR). <!-- id: 92 -->
+    - [x] Implement Pruning Rules (MaxDD > 15%, Turnover > 5000x). <!-- id: 93 -->
+    - [x] Define Concrete Search Space (Execution + PPO + Rewards). <!-- id: 94 -->
+    - [x] **Create Monitoring Dashboard** ([dashboard.py](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/dashboard.py)). <!-- id: 101 -->
+- [ ] **Training Implementation**:
+    - [x] Add Entropy Annealing & LR Schedule to [trainer.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/trainer.py) (and Tuner). <!-- id: 95 -->
+    - [ ] Implement Fixed Seed & Config Saving for reproducibility. <!-- id: 96 -->
+- [ ] **Execution (Hybrid Budget)**:
+    - [ ] Stage 1: Run 100 trials (200k steps). <!-- id: 97 -->
+    - [ ] Stage 2: Validate Top 5 (1M steps) on OOS years. <!-- id: 98 -->
+- [ ] **Analysis**:
+    - [ ] Perform Ablation Studies (Overlay OFF, Regime OFF). <!-- id: 99 -->
+    - [ ] Check Promotion Gates (DD < 10%, Sortino > 1.5). <!-- id: 100 -->

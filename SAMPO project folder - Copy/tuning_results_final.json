@@ -1,0 +1,12 @@
+{
+    "conf_flip": 0.55,
+    "cooldown_steps": 4,
+    "profit_buffer": 0.0004864992711272375,
+    "t_profit_steps": 10,
+    "max_hold_steps": 278,
+    "learning_rate": 0.0003095721356541865,
+    "clip_range": 0.10245014254861416,
+    "ent_coef": 0.09476211223544913,
+    "batch_size": 128,
+    "n_steps": 1024
+}

@@ -1,0 +1,13 @@
+Total Trades: 7
+Final Equity: 10089.48
+Total PnL: 46.58
+Win Rate: 57.14%
+Avg PnL per Trade: 6.65
+Max Drawdown: 0.15%
+
+Exit Reasons:
+Reason
+TP_Long          3
+Regime_Risk      2
+Regime_Profit    1
+Flip             1

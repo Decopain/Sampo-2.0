@@ -1,0 +1,309 @@
+# SAMPO2 Implementation Plan
+
+This plan outlines the architecture for "SAMPO2", a modular algorithmic trading research pipeline.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Action Space Config**: The action space is hardcoded as discrete: `HOLD_OUT`, `BUY`, `SELL`, `CLOSE`, `HOLD_IN`. Ensure this maps logic correctly to your broker execution later.
+> **Dependency Handling**: We assume a Python environment with `gymnasium`, `stable-baselines3`, `tensorflow`, [arch](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/pipeline/system_architecture_pipeline.py#79-86) (for GARCH), and `pandas`.
+> **Data Source**: We will use [combined_data.csv](file:///c:/Users/Jeff/Desktop/sample_DS/SAMPO/combined_data.csv) from the `SAMPO` directory as the primary input for now. Future live data will be sourced from **Interactive Brokers** (replacing OANDA).
+
+## Proposed Architecture
+
+We will create a python package `sampo2` with the following structure:
+
+```
+sampo2/
+├── __init__.py
+├── config.py               # Global configuration (paths, params)
+├── data/
+│   ├── __init__.py
+│   ├── loader.py           # Data loading & validation
+│   ├── garch.py            # GARCH volatility modeling
+│   └── processor.py        # Dataset merging & preprocessing
+├── models/
+│   ├── __init__.py
+│   └── pnn.py              # Parallel Neural Network (TensorFlow)
+├── env/
+│   ├── __init__.py
+│   ├── trading_env.py      # Gymnasium Trading Environment
+│   └── actions.py          # Action constants used globally
+├── agents/
+│   ├── __init__.py
+│   └── trainer.py          # PPO Training & Evaluation (SB3)
+└── utils/
+    ├── __init__.py
+    └── logger.py           # Logging utilities
+```
+
+Root scripts:
+- [run_pipeline.py](file:///c:/Users/Jeff/Desktop/sample_DS/run_pipeline.py): Main CLI entry point.
+
+## Phase 1: Data & GARCH (Part 1)
+
+**Goal**: Load raw data, validate schema, and generate volatility features.
+
+### [NEW] [sampo2/data/loader.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/data/loader.py)
+- `DataLoader` class to load CSVs.
+- Validation logic to ensure `Open`, `High`, `Low`, `Close`, [volume](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/data/aggregator.py#123-139) exist and timestamps are valid.
+
+### [NEW] [ib_aggregator.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/data/ib_aggregator.py)
+ - **Purpose**: Fetches historical data from Interactive Brokers using `ib_async`.
+ - **Key Features**:
+   - Asynchronous connection to IB Gateway/TWS.
+   - Using `reqHistoricalData` for fetching bars.
+   - Robust error handling and reconnection logic.
+   - Helper function `download_historical_data` mirroring the previous OANDA functionality.
+
+#### [MODIFY] [aggregator.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/data/aggregator.py)
+ - **Purpose**: Orchestrates data processing.
+ - **Changes**:
+   - Replace `tpqoa` usage with `ib_aggregator` for fetching raw data.
+   - Keep indicator calculation logic as is (it works on DataFrames).
+
+### [NEW] [sampo2/data/garch.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/data/garch.py)
+- `GarchModel` class using [arch](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/pipeline/system_architecture_pipeline.py#79-86) library.
+- Methods to fit GARCH(1,1) (or user specified) and forecast volatility.
+- Supports multi-timeframe (Daily, H1, 15min) if data is resampled.
+
+## Phase 2: PNN Model (Part 2)
+
+**Goal**: Build and train the Parallel Neural Network to extract features.
+
+### [NEW] [sampo2/models/pnn.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/models/pnn.py)
+- `ParallelNeuralNetwork` class (Keras).
+- Input: Multi-frequency features.
+- Architecture: Separate branches for different timeframes/feature sets, merged into a dense head.
+- Output: Prediction (e.g. next return) or latent embedding.
+
+## Phase 3: Combined Dataset (Part 3)
+
+**Goal**: Merge original features, GARCH outputs, and PNN predictions/embeddings.
+
+### [NEW] [sampo2/data/processor.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/data/processor.py)
+- `DataProcessor` class.
+- Merges [combined_data.csv](file:///c:/Users/Jeff/Desktop/sample_DS/SAMPO/combined_data.csv), [enriched_features.csv](file:///c:/Users/Jeff/Desktop/sample_DS/outputs/enriched_features.csv), and GARCH predictions.
+- Handles alignment, NaN filling (forward fill), and scaling.
+- Adds [action](file:///c:/Users/Jeff/Desktop/sample_DS/renko_experiment/run_strategy.py#32-53) column placeholder if missing.
+
+## Phase 4: Trading Environment (Part 4)
+
+**Goal**: Gymnasium environment for RL.
+
+### [NEW] [sampo2/env/actions.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/env/actions.py)
+- Defines `ACTION_MAP`.
+
+### [NEW] [sampo2/env/trading_env.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/env/trading_env.py)
+- `TradingEnv` class inheriting `gymnasium.Env`.
+- **State**: Current window of market features + account state (balance, position).
+- **Action**: Discrete(5).
+- **Reward**: Change in portfolio value (equity) - transaction costs.
+- **Logic**:
+    - [step()](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/env/trading_env.py#94-292): executes trade, updates price, calcs reward.
+    - `reset()`: resets account.
+    - `render()`: prints stats.
+
+## Phase 5: PPO Agent (Part 5)
+
+**Goal**: Train the RL agent.
+
+### [NEW] [sampo2/agents/trainer.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/trainer.py)
+- Wraps `Stable Baselines3` PPO.
+- Configures policy network.
+- Implements [train()](file:///c:/Users/Jeff/Desktop/SAMPO%20project%20folder/sampo2/pipeline/system_architecture_pipeline.py#88-143) and `evaluate()` methods.
+- Saves model artifacts.
+
+## Verification Plan
+
+### FRESH 1M TRAINING
+- **Objective**: Train a PPO agent from scratch for 1,000,000 steps to overcome potential "safety bias".
+- **Config**: 
+    - Steps: 1,000,000
+    - Model Name: `ppo_fresh_1m`
+    - Start Condition: No Resume (Fresh Init)
+
+### Automated Tests
+We will create a simple validation script `tests/validate_pipeline.py` to run after each phase.
+
+#### [MODIFY] [run_pipeline.py](file:///c:/Users/Jeff/Desktop/sample_DS/run_pipeline.py)
+ - **Purpose**: CLI entry point.
+ - **Changes**:
+   - Add arguments for IBKR connection (host, port, client_id).
+   - Route data fetching to `ib_aggregator`.
+
+### Unit Tests
+ - `tests/test_ib_connection.py`: Verify IBKR connection and simple data fetch.
+ - `tests/test_aggregator.py`: Verify data transformation pipeline with IBKR data.
+
+1. **Data Load**: `python -m sampo2.data.loader` -> prints head of df and schema check.
+2. **GARCH**: `python -m sampo2.data.garch` -> fits model on sample data, outputs vol preds.
+3. **Env**: `python -m sampo2.env.trading_env` -> runs a random agent loop for 100 steps, checking for crashes and state updates.
+4. **PPO**: `python run_pipeline.py --train` -> runs a short training loop (1000 steps) to verify end-to-end flow.
+
+### Manual Verification
+- Inspect generated CSVs (e.g., `volatility_preds.csv`) to ensure values are reasonable (non-negative, correlated with price moves).
+- Review `equity_curve.png` (to be generated) after backtesting.
+
+## Phase 6: Risk & Sizing Framework (Part 6)
+
+**Goal**: Implement a multi-metric reward function and dynamic position sizing to improve stability and risk-adjusted returns.
+
+### [MODIFY] [sampo2/env/trading_env.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/env/trading_env.py)
+ - **Action Space**: Change from `Discrete(5)` to `Box(low=-1, high=1, shape=(1,))`.
+   - Output: `target_exposure` (-1.0 = Full Short, +1.0 = Full Long, 0.0 = Flat).
+ - **Internal State**:
+   - `loss_streak`: Counter for consecutive losing trades.
+   - `risk_multiplier`: `base_risk * (decay ** loss_streak)`.
+   - `rolling_vol`: Standard deviation of returns (window=20).
+   - `rolling_dd`: Drawdown from peak equity (window=20).
+ - **Reward Function**:
+   - `Reward = (r_log - cost) - Penalty_Vol - Penalty_DD - Penalty_Streak`
+   - `Penalty_Vol = λ_vol * max(0, rolling_vol - target_vol)`
+   - `Penalty_DD = λ_dd * max(0, current_dd - dd_limit)`
+ - **Termination**:
+   - `if current_dd > max_dd_kill`: Force Close & Terminate.
+   - `if loss_streak > streak_kill`: Force Close & Terminate.
+
+### [NEW] [sampo2/agents/risk_evaluator.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/agents/risk_evaluator.py)
+ - Calculates Sharpe, Sortino, Calmar, MaxDD, and Win Rate from trade logs.
+
+## Phase 7: Robust Execution & Smart Exits (Churn Reduction)
+**Goal**: Implement an "Execution Overlay" to filter noise, prevent over-trading, and capture profits intelligently.
+
+### [MODIFY] [sampo2/env/trading_env.py](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/env/trading_env.py)
+
+#### 1. Configuration & State
+**New Config**:
+- `conf_flip` (0.6): Min confidence to reverse position (**Source**: PNN max class prob OR PPO margin).
+- `cooldown_steps` (5): Min bars between flips (reversals only).
+- `profit_buffer`: Profit buffer above costs to allow profit-taking.
+- `t_profit_steps`: Time threshold for "green but stagnant" exit.
+- `max_hold_steps`: Hard time exit threshold.
+- `close_bonus`: Small reward for profitable closed trade.
+- `atr_window`, `k_tp`, `k_sl`, `k_trl`: Dynamic exit params.
+
+**New State**:
+- `cooldown_remaining` (**Logic**: `max(cooldown - 1, 0)` each step unless reset by trade event).
+- `entry_price`, `entry_atr`, `highest_price`, `lowest_price`
+- `holding_steps`
+- `costs_paid_current_trade`
+- `agent_action`, `executed_action`, `override_reason`
+
+#### 2. Execution Logic ([step()](file:///c:/Users/Jeff/Desktop/sample_DS/sampo2/env/trading_env.py#94-292))
+**Order of Operations**:
+
+**Exit Overlays** (Priority; force CLOSE; not subject to cooldown/flip-gate):
+- **SL/TP**: Dynamic ATR thresholds.
+- **Trailing**: K_TRL*ATR from peak favorable excursion.
+- **Time**: `holding_steps >= max_hold_steps` OR (Green + Stagnant >= `t_profit_steps`).
+- **Regime**:
+  - Risk exit: CLOSE if `regime_against_position` (even if not green).
+  - Profit capture: if `chop_flag` AND `unrealized_pnl >= (costs_paid_current_trade + profit_buffer)` => CLOSE.
+
+**Flip Gate & Cooldown** (reversals only):
+- If `agent_action` implies a direction reversal (long↔short):
+  - If `cooldown_remaining > 0` => block flip (override HOLD_IN).
+  - Else if `confidence < conf_flip` => block flip (override HOLD_IN).
+
+**Execute**:
+- Apply final `executed_action`.
+- **State Management**: Closing RESETS trade state (entry, holding, etc.); Opening INITIALIZES trade state.
+- Log `agent_action` vs `executed_action` and `override_reason`.
+
+#### 3. Accounting Fix
+- **Split Flips**:
+    - **Close Event**: Log `realized_pnl_net` and `costs` applied on close.
+    - **Open Event**: Log `open cost` only (no realized pnl).
+- **Overlay CLOSE**: only `close_trade` (no open).
+- **Invariant**: `delta_equity ≈ position * return - costs - penalties`.
+
+#### 4. Observation Space & Reward
+- **Obs**: `unrealized_pnl`, `holding_steps`, `costs_paid_current_trade`, `dist_to_tp`, `dist_to_sl`, `dist_to_trailing`, `chop_flag` (or regime enum).
+- **Reward**: Add `close_bonus` only when `net realized trade PnL >= (costs_paid_current_trade + profit_buffer)`.
+
+#### 5. Validation
+- [test_execution_logic.py](file:///c:/Users/Jeff/Desktop/sample_DS/test_execution_logic.py): Verify overrides, flip blocking, accounting invariants, flip logging split, and each exit trigger path.
+
+## Phase 9: Full Calibration / Hyperparameter Tuning (Part 8)
+
+**Goal**: Optimize the "Sniper" execution logic and PPO agent dynamics to maximize risk-adjusted returns (Sharpe/Sortino) and minimize drawdown.
+
+### 1. Data Protocol
+- **Dataset**: EUR/USD (Source: IBKR).
+- **Timeframes**: H1, Daily, M15 (Multi-Timeframe Architecture).
+- **Splits**:
+    - **Train**: 2006-2008 (High Volatility, Financial Crisis preamble).
+    - **Validation**: 2009 (Post-Crisis recovery).
+    - **Test (OOS)**: 2010 (Sovereign Debt Crisis).
+- **Format**: Walk-forward validation (conceptually) or fixed splits for initial tuning.
+
+### 2. Tuning Infrastructure
+**Objective**: Automate the search for optimal "Hard Physics" and "Soft Brain".
+
+#### [NEW] [sampo2/agents/tune_calibrated.py](file:///c:/Users/Jeff/Desktop/SAMPO project folder/sampo2/agents/tune_calibrated.py)
+
+**A) Search Space (Concrete Ranges)**:
+1. **Execution Overlays** (Hard Physics):
+   - `conf_flip`: 0.55 - 0.75 (Step 0.05)
+   - `cooldown_steps`: 3 - 15 (Integer)
+   - `profit_buffer`: 0.0002 - 0.0010 (2-10 bps)
+   - `t_profit_steps`: 10 - 60
+   - `max_hold_steps`: 50 - 300
+   - `k_tp`: 1.5 - 3.5
+   - `k_sl`: 0.75 - 2.0
+   - `k_trl`: 0.75 - 2.0
+
+2. **PPO Core** (Soft Brain):
+   - `learning_rate`: 1e-5 - 5e-4 (Log scale)
+   - `clip_range`: 0.1 - 0.3
+   - `ent_coef_start`: 0.0 - 0.02 (Annealed to 0)
+   - `gamma`: 0.95 - 0.999
+   - `gae_lambda`: 0.8 - 0.98
+   - `batch_size`: 64, 128, 256, 512
+   - `n_steps`: 1024, 2048, 4096 (Must be > batch_size)
+   - `n_epochs`: 3 - 10
+
+3. **Rewards**:
+   - `lambda_vol`: 0.0 - 2.0
+   - `lambda_dd`: 0.0 - 2.0
+   - `lambda_streak`: 0.0 - 0.5
+
+**B) Evaluation Metrics & Logging**:
+Each trial must produce a standardized report:
+- **Risk Metrics**: Return, Sharpe, Sortino, Calmar, Max DD, Volatility, CVaR(95).
+- **Execution Stats**: Turnover ($\sum|\Delta pos|$), Trade Count, Avg Hold Time.
+- **Overlay Breakdown**: % steps overridden by TF/SL/Trail/Time/Regime_Risk/Regime_Profit/Cooldown/Conf.
+
+**C) Pruning Rules (Early Stopping)**:
+- **Max DD**: Prune if > 15% at any point.
+- **Equity Flatline**: Prune if no new equity high for 50k steps (after first 50k).
+- **Turnover**: Prune if annual turnover > 5000x (Churn check).
+- **Validation**: Prune if Sharpe < Baseline (0.0) at checkpoint K.
+
+**D) Trial Budget**:
+- **Stage 1 (Coarse)**: 100 trials x 200k steps (Random/TPE search).
+- **Stage 2 (Fine)**: Top 5 configs x 1M steps (Verify stability).
+
+### 3. Reproducibility & Robustness
+- **Seeds**: Fixed random seed per trial for PPO and Env.
+- **Configs**: Save full JSON config + commit hash + dataset hash per trial.
+- **Robustness**: Validate top models on *multiple* OOS years (2010, 2011, 2012) to ensure no single-year overfitting.
+
+### 4. Ablation Studies
+(After selecting best Final Candidate)
+Run 200k step comparison:
+1. **Overlay OFF**: Pure PPO control.
+2. **Regime Exits OFF**: Only TP/SL/Time (No Renko logic).
+3. **Cost-Aware OFF**: Simple profit taking (No buffer).
+4. **Flip Gate OFF**: Free reversals.
+*Success Criteria*: Churn reduction > 50% vs Control, with minimal Return loss (<10%).
+
+### 5. Baseline & Gates
+- **Baseline**: Current robust model (Phase 8 result).
+- **Promotion Gate**:
+    - Max DD < 10%
+    - Sortino > 1.5
+    - Turnover < 1000/yr
+    - Overrides: Not dominated by "Forced SL" (indicates bad entries).
+

@@ -1,0 +1,15 @@
+pandas
+numpy
+stable-baselines3
+gymnasium
+shimmy>=0.2.1
+tensorflow
+xgboost
+arch
+tpqoa
+ib_async
+scikit-learn
+joblib
+tqdm
+tensorboard
+optuna
